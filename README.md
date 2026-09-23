@@ -1,36 +1,102 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# T.A.L.O.S. — Transaction Assessment & Logic Orchestration System
+
+A hybrid AI-driven transaction routing and guardrail engine built with Next.js, TypeScript, SQLite, and Prisma.
+
+## Architecture
+
+T.A.L.O.S. routes financial transactions through a two-tier AI pipeline:
+
+- **System One (Fast Path):** [TypeSafe Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev) classifies, scores, and routes each transaction with calibrated, type-safe probabilistic answers (~70–500ms).
+- **System Two (Fallback Path):** when Jev's confidence on the routing decision falls at or below the threshold (`JEV_CONFIDENCE_THRESHOLD`, default `0.85`), a local Ollama model (`llama3.2:3b`) performs deep contextual reasoning before the final decision.
+
+```
+synthetic transaction
+        │
+        ▼
+POST /api/transactions/process
+        │
+        ▼
+   Jev (System One) ── confidence > 85% ──► decision
+        │
+        └── confidence ≤ 85% ──► Ollama (System Two) ──► decision
+                                      │
+                                      ▼
+                          saved to SQLite + dashboard
+```
+
+Every decision, the model used, and latency are persisted. See `docs/` for design, API, and integration details.
+
+## Tech Stack
+
+| Layer      | Choice                                                     |
+|------------|------------------------------------------------------------|
+| Framework  | Next.js 16 (App Router) — frontend + API routes            |
+| Language   | TypeScript (strict)                                        |
+| UI         | Tailwind CSS v4 + shadcn/ui                                |
+| Database   | SQLite (local file)                                        |
+| ORM        | Prisma 7                                                   |
+| Data       | @faker-js/faker (synthetic users/transactions)             |
+| AI System 1| TypeSafe Jev (System One, `@typesafe-ai/sdk`)              |
+| AI System 2| Ollama local (`llama3.2:3b`)                                |
+| Validation | Zod                                                        |
+| Testing    | Vitest + React Testing Library                             |
 
 ## Getting Started
 
-First, run the development server:
+```bash
+npm install
+```
+
+Configure the environment — see `.env.example`:
+
+```bash
+cp .env.example .env.local   # add TYPESAFE_API_KEY, optional Ollama overrides
+```
+
+Set up the database:
+
+```bash
+npx prisma migrate dev       # applies prisma/migrations
+```
+
+Pull the fallback model (System Two):
+
+```bash
+ollama pull llama3.2:3b
+```
+
+Run the app and seed 50 users / 500 transactions through the live process endpoint:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run db:seed
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Command                | Description                                   |
+|------------------------|-----------------------------------------------|
+| `npm run dev`          | Start the Next.js dev server                  |
+| `npm run build`        | Production build                              |
+| `npm run lint`         | ESLint                                        |
+| `npm run typecheck`    | `tsc --noEmit`                                |
+| `npm test`             | Vitest unit + integration suites              |
+| `npm run generate:data`| Write synthetic transaction JSON to disk      |
+| `npm run db:seed`      | Seed Prisma with generated transactions       |
 
-## Learn More
+## API
 
-To learn more about Next.js, take a look at the following resources:
+- `POST /api/transactions/process` — route a transaction through the System One / System Two gate
+- `GET  /api/transactions/history?limit=50` — recent transactions
+- `GET  /api/metrics` — dashboard stats (counts, model/action breakdown, avg risk)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Security
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- All AI outputs validated against Zod schemas before persistence
+- API keys and model URLs live in `.env.local` (gitignored)
+- In-memory rate limiting on the process endpoint
+- Standardized error payloads; no internal stack traces leaked
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See `docs/API_SPEC.md` and `docs/ARCHITECTURE.md` for details.
